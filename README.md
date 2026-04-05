@@ -2,7 +2,7 @@
 
 This is a local, self-hosted version of the ShelfSignal dashboard with a real backend and transparent, weighted metrics.
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=YOUR_GITHUB_REPO_URL)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/sasim042/shelf-shift)
 
 ## What It Does
 - Reads `/Users/sasim/Documents/master_products_all_zips.csv`
