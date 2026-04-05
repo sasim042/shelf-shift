@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: shelfsignal
+    env: python
+    plan: free
+    buildCommand: ""
+    startCommand: "python3 server.py"
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"

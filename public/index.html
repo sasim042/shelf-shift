@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ShelfSignal — Retail Intelligence</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<div id="header">
+  <div id="logo"><span>ShelfSignal</span> / Retail Intelligence</div>
+  <div id="tagline">Protein Category · Instacart Network · 6 Markets · Pop+Density Weighted</div>
+</div>
+
+<div id="controls">
+  <div class="ctrl-group">
+    <span class="ctrl-label">ZIP</span>
+    <select id="zip-select"></select>
+  </div>
+  <div class="ctrl-group">
+    <span class="ctrl-label">Brand Filter</span>
+    <input type="text" id="brand-search" placeholder="search brand…">
+  </div>
+  <div class="ctrl-group">
+    <span class="ctrl-label">Sort by</span>
+    <select id="sort-select">
+      <option value="skus">SKU Count</option>
+      <option value="penetration">Store Penetration</option>
+      <option value="avg_price">Avg Price</option>
+      <option value="gap">Expansion Gap</option>
+    </select>
+  </div>
+  <div id="view-tabs">
+    <div class="vtab active" data-view="overview">Overview</div>
+    <div class="vtab" data-view="brands">Brands</div>
+    <div class="vtab" data-view="compare">Compare</div>
+    <div class="vtab" data-view="signals">Insights</div>
+  </div>
+</div>
+
+<div id="tooltip"></div>
+
+<div id="main">
+  <div id="sidebar">
+    <div class="sb-section">
+      <div class="sb-head"><span>Stores</span><span id="sb-store-count"></span></div>
+      <div id="sb-stores"></div>
+    </div>
+    <div class="sb-section">
+      <div class="sb-head"><span>Top Brands</span><span id="sb-brand-count"></span></div>
+      <div id="sb-brands"></div>
+    </div>
+  </div>
+
+  <div id="content">
+
+    <!-- OVERVIEW VIEW -->
+    <div class="view active" id="view-overview">
+      <div id="kpi-row">
+        <div class="kpi">
+          <div class="kpi-label">Stores</div>
+          <div class="kpi-val" id="kpi-stores">—</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Total SKUs</div>
+          <div class="kpi-val" id="kpi-skus">—</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Brands</div>
+          <div class="kpi-val" id="kpi-brands">—</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Avg Price / SKU</div>
+          <div class="kpi-val" id="kpi-price">—</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Avg Price / Item</div>
+          <div class="kpi-val" id="kpi-price-item">—</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">In-Stock Rate</div>
+          <div class="kpi-val" id="kpi-stock">—</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">HHI Index</div>
+          <div class="kpi-val" id="kpi-hhi">—</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:var(--border);">
+        <!-- Price Distribution -->
+        <div class="section" style="border-right:var(--border);border-bottom:none;">
+          <div class="section-head">
+            <span class="section-title">Price Distribution</span>
+            <span class="section-note" id="price-total-note"></span>
+          </div>
+          <div id="price-chart"></div>
+        </div>
+        <!-- Bubble viz -->
+        <div class="section" style="border-bottom:none;">
+          <div class="section-head">
+            <span class="section-title">Penetration vs. Shelf Depth</span>
+            <span class="section-note">bubble = avg price</span>
+          </div>
+          <svg id="bubble-svg" viewBox="0 0 480 260" style="width:100%;max-height:260px;"></svg>
+        </div>
+      </div>
+
+      <!-- Subcategory mix -->
+      <div class="section">
+        <div class="section-head">
+          <span class="section-title">Subcategory Mix</span>
+          <span class="section-note">Estimated SKU distribution by subcategory</span>
+        </div>
+        <div id="subcategory-chart"></div>
+      </div>
+
+      <!-- Store SKU bar chart -->
+      <div class="section">
+        <div class="section-head">
+          <span class="section-title">SKUs per Store</span>
+          <span class="section-note">Protein category shelf size by retailer</span>
+        </div>
+        <div id="store-bars"></div>
+      </div>
+    </div>
+
+    <!-- BRANDS VIEW -->
+    <div class="view" id="view-brands">
+      <div class="section">
+        <div class="section-head">
+          <span class="section-title">Brand Intelligence Table</span>
+          <span class="section-note" id="brands-count-note"></span>
+        </div>
+        <table class="tbl" id="brand-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Brand</th>
+              <th class="r">SKUs</th>
+              <th class="r">Stores</th>
+              <th class="r">Penetration</th>
+              <th>Shelf Depth</th>
+              <th class="r">Avg Price</th>
+              <th class="r">Price / Item</th>
+              <th class="r">In-Stock</th>
+              <th>vs Weighted Avg</th>
+              <th>Signal</th>
+            </tr>
+          </thead>
+          <tbody id="brand-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- COMPARE VIEW -->
+    <div class="view" id="view-compare">
+      <div class="section">
+        <div class="section-head" style="align-items:center;">
+          <div>
+            <div class="section-title">Brand Penetration Comparison</div>
+            <div class="section-note">Selected ZIP vs weighted avg vs comparison ZIP</div>
+          </div>
+          <div class="compare-controls">
+            <span class="ctrl-label">Compare ZIP</span>
+            <select id="compare-zip-select"></select>
+            <span class="ctrl-label">Search</span>
+            <input id="compare-search" class="entity-search" placeholder="brand search…">
+            <span class="ctrl-label">Sort</span>
+            <select id="compare-sort" class="entity-select">
+              <option value="avg_desc">Weighted Avg ↓</option>
+              <option value="avg_asc">Weighted Avg ↑</option>
+              <option value="left_desc">Selected ZIP ↓</option>
+              <option value="left_asc">Selected ZIP ↑</option>
+              <option value="right_desc">Compare ZIP ↓</option>
+              <option value="right_asc">Compare ZIP ↑</option>
+              <option value="gap_desc">Gap vs Avg ↓</option>
+              <option value="gap_asc">Gap vs Avg ↑</option>
+            </select>
+          </div>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="heatmap" id="heatmap-table"></table>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-head">
+          <span class="section-title">Market Profile Comparison</span>
+        </div>
+        <div id="cmp-profiles"></div>
+      </div>
+    </div>
+
+    <!-- INSIGHTS VIEW -->
+    <div class="view" id="view-signals">
+      <div class="section">
+        <div class="section-head">
+          <span class="section-title">Tailored Insights</span>
+          <span class="section-note" id="tailor-note"></span>
+        </div>
+        <div class="tailor-controls">
+          <span class="ctrl-label">Role</span>
+          <div class="role-toggle" id="role-toggle">
+            <button class="role-btn active" data-role="brand">Brand</button>
+            <button class="role-btn" data-role="retailer">Retailer</button>
+          </div>
+          <input class="entity-search" id="entity-search" placeholder="Search brands…">
+          <select class="entity-select" id="entity-select"></select>
+          <button class="entity-go" id="entity-go">Generate</button>
+        </div>
+        <div class="insights-grid" id="tailored-grid"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-head">
+          <span class="section-title">Expansion Opportunity Signals</span>
+          <span class="section-note" id="signals-zip-note"></span>
+        </div>
+        <div class="insights-grid" id="signals-grid"></div>
+      </div>
+      <div class="section">
+        <div class="section-head">
+          <span class="section-title">Brands Present Nationally, Absent Here</span>
+          <span class="section-note">In 2+ other ZIPs but 0 stores in selected ZIP</span>
+        </div>
+        <table class="tbl" id="absent-table">
+          <thead>
+            <tr>
+              <th>Brand</th>
+              <th class="r">Weighted Avg Penetration</th>
+              <th class="r">ZIPs Present</th>
+              <th class="r">Avg SKUs Where Present</th>
+              <th>Opportunity</th>
+            </tr>
+          </thead>
+          <tbody id="absent-tbody"></tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <div class="section-head">
+          <span class="section-title">Methodology & Data Transparency</span>
+          <span class="section-note" id="method-note"></span>
+        </div>
+        <div id="methodology"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="/app.js?v=2"></script>
+</body>
+</html>
