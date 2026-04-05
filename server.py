@@ -196,6 +196,7 @@ class DataStore:
         self.brand_store_price = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
         self.brand_store_stock = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
         self.brand_subcats = defaultdict(lambda: defaultdict(Counter))
+        self.store_subcats = defaultdict(lambda: defaultdict(Counter))
         self._load()
 
     def _load(self):
@@ -306,6 +307,7 @@ class DataStore:
                 z["subcats"][subcat] += 1
                 z["brand_subcats"][brand_norm][subcat] += 1
                 self.brand_subcats[zip_code][brand_norm][subcat] += 1
+                self.store_subcats[zip_code][store][subcat] += 1
 
                 # Brand-store mapping for tailored insights
                 self.brand_store[zip_code][brand_norm][store] += 1
@@ -330,6 +332,8 @@ class DataStore:
             br = len(zd["brands_set"])
             ap = (zd["price_sum"] / zd["price_n"]) if zd["price_n"] else 0.0
             pp = (zd["unit_price_sum"] / zd["unit_price_n"]) if zd["unit_price_n"] else 0.0
+            if not pp and ap:
+                pp = ap
             ir = (zd["stock"] / zd["count"] * 100.0) if zd["count"] else 0.0
 
             # HHI based on SKU share
@@ -343,6 +347,8 @@ class DataStore:
             for store_name, sdata in zd["stores"].items():
                 store_ap = (sdata["price_sum"] / sdata["price_n"]) if sdata["price_n"] else 0.0
                 store_pp = (sdata.get("unit_price_sum", 0.0) / sdata.get("unit_price_n", 0)) if sdata.get("unit_price_n") else 0.0
+                if not store_pp and store_ap:
+                    store_pp = store_ap
                 store_ir = (sdata["stock"] / sdata["count"] * 100.0) if sdata["count"] else 0.0
                 stores_list.append({
                     "n": store_name,
@@ -359,6 +365,8 @@ class DataStore:
                 display = bdata["display"].most_common(1)[0][0]
                 ap_b = (bdata["price_sum"] / bdata["price_n"]) if bdata["price_n"] else 0.0
                 pp_b = (bdata.get("unit_price_sum", 0.0) / bdata.get("unit_price_n", 0)) if bdata.get("unit_price_n") else 0.0
+                if not pp_b and ap_b:
+                    pp_b = ap_b
                 sr = (bdata["stock"] / bdata["count"] * 100.0) if bdata["count"] else 0.0
                 sc = len(bdata["stores"])
                 penetration = (sc / ts * 100.0) if ts else 0.0
@@ -456,6 +464,8 @@ class DataStore:
             "ir": wavg("ir"),
             "hhi": wavg("hhi"),
         }
+        if not national["pp"] and national["ap"]:
+            national["pp"] = national["ap"]
 
         weights_list = []
         for z in zip_list:
@@ -548,6 +558,21 @@ class DataStore:
         total_stores = z["ts"]
         subcat_counts = self.brand_subcats[zip_code].get(brand_id, Counter())
         top_subcats = subcat_counts.most_common(5)
+        # Compare brand subcategory mix vs ZIP mix
+        zip_subcats = z.get("subcats", {})
+        zip_total = sum(zip_subcats.values()) or 1
+        brand_total = sum(subcat_counts.values()) or 1
+        subcat_mix = []
+        for name, count in top_subcats:
+            share = round(count / brand_total * 100, 1)
+            zip_share = round(zip_subcats.get(name, 0) / zip_total * 100, 1)
+            subcat_mix.append({
+                "name": name,
+                "brand_share": share,
+                "zip_share": zip_share,
+                "diff": round(share - zip_share, 1),
+                "skus": count
+            })
         if local_brand:
             local = {
                 "stores": local_brand["sc"],
@@ -590,7 +615,7 @@ class DataStore:
                 "zip_rank_by_penetration": zip_rank,
                 "total_zips": len(self.data["zip_list"]),
             },
-            "subcategories": [{"name": n, "skus": c} for n, c in top_subcats],
+            "subcategories": subcat_mix,
             "top_stores": store_list[:8],
         }
 
@@ -604,8 +629,10 @@ class DataStore:
             return None
         # Find top brands in this store
         brand_counts = []
+        store_brand_set = set()
         for brand_id, stores in self.brand_store.get(zip_code, {}).items():
             if store_name in stores:
+                store_brand_set.add(brand_id)
                 brand_counts.append({
                     "brand": brand_id,
                     "sk": stores[store_name],
@@ -619,6 +646,41 @@ class DataStore:
 
         zip_avg_skus = sum(s["s"] for s in z["stores"]) / len(z["stores"]) if z["stores"] else 0
         zip_avg_brands = sum(s["b"] for s in z["stores"]) / len(z["stores"]) if z["stores"] else 0
+        zip_pp = z.get("pp", 0.0)
+        zip_ap = z.get("ap", 0.0)
+
+        # Store-level concentration
+        store_total = store_data["s"] or 1
+        top5_share = round(sum(b["sk"] for b in brand_counts[:5]) / store_total * 100, 1) if brand_counts else 0.0
+        top1_share = round((brand_counts[0]["sk"] / store_total * 100), 1) if brand_counts else 0.0
+
+        # Subcategory mix vs ZIP
+        store_subcats = self.store_subcats[zip_code].get(store_name, Counter())
+        store_total_sub = sum(store_subcats.values()) or 1
+        zip_subcats = z.get("subcats", {})
+        zip_total_sub = sum(zip_subcats.values()) or 1
+        subcat_mix = []
+        for name, count in store_subcats.most_common(6):
+            share = round(count / store_total_sub * 100, 1)
+            zip_share = round(zip_subcats.get(name, 0) / zip_total_sub * 100, 1)
+            subcat_mix.append({
+                "name": name,
+                "store_share": share,
+                "zip_share": zip_share,
+                "diff": round(share - zip_share, 1),
+                "skus": count
+            })
+
+        # Missing top ZIP brands in this store
+        missing_top = []
+        for b in z["brands"][:15]:
+            if b["id"] not in store_brand_set:
+                missing_top.append({
+                    "brand": b["n"],
+                    "zip_penetration": b["p"],
+                    "zip_skus": b["sk"]
+                })
+        missing_top = missing_top[:6]
 
         return {
             "zip": zip_code,
@@ -628,8 +690,16 @@ class DataStore:
             "zip_avg": {
                 "skus": round(zip_avg_skus, 1),
                 "brands": round(zip_avg_brands, 1),
+                "avg_price": round(zip_ap, 2),
+                "price_per_item": round(zip_pp, 2),
             },
             "top_brands": top_brands,
+            "concentration": {
+                "top1_share": top1_share,
+                "top5_share": top5_share
+            },
+            "subcategory_mix": subcat_mix,
+            "missing_top_brands": missing_top,
         }
 
 

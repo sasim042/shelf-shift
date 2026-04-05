@@ -10,6 +10,8 @@ let BRAND_LABEL_LIST = [];
 let compareZip = null;
 let compareSearch = '';
 let compareSort = 'avg_desc';
+let lastBrandInsight = null;
+let lastStoreInsight = null;
 
 const fmt = {
   num: n => (n ?? 0).toLocaleString(),
@@ -545,40 +547,66 @@ async function renderTailoredInsights() {
       document.getElementById('tailored-grid').innerHTML = `<div class="empty">${data.error}</div>`;
       return;
     }
+    lastBrandInsight = data;
+    const missingStores = Math.max(0, data.local.total_stores - data.local.stores);
+    const depth = data.local.stores ? (data.local.skus / data.local.stores).toFixed(1) : '—';
+    const priceDiff = (data.national.avg_price_per_item && data.local.price_per_item)
+      ? ((data.local.price_per_item / data.national.avg_price_per_item - 1) * 100)
+      : 0;
+    const topSub = (data.subcategories && data.subcategories[0]) ? data.subcategories[0] : null;
     const cards = [
       {
-        icon: 'LOCAL VS WEIGHTED AVG',
+        icon: 'DISTRIBUTION GAP',
         headline: `${data.brand_label} in ${data.zip} (${data.zip_label})`,
-        body: `Penetration ${fmt.pct(data.local.penetration)} vs ${fmt.pct(data.national.avg_penetration)} weighted average (${data.delta.penetration >= 0 ? '+' : ''}${data.delta.penetration}pts). Stores: ${data.local.stores}/${data.local.total_stores}.`
+        body: `Penetration ${fmt.pct(data.local.penetration)} vs ${fmt.pct(data.national.avg_penetration)} weighted average (${data.delta.penetration >= 0 ? '+' : ''}${data.delta.penetration}pts). Missing in ${missingStores} of ${data.local.total_stores} stores.`,
+        takeaway: missingStores > 0 ? `Key takeaway: distribution gap suggests store expansion is the highest‑impact lever.` : `Key takeaway: distribution is saturated; focus on depth and pricing.`
       },
       {
         icon: 'SHELF DEPTH',
-        headline: `${data.local.skus} SKUs locally`,
-        body: `Avg SKUs where present: ${data.national.avg_skus_where_present}. Avg price: ${fmt.price(data.local.avg_price)}. Price per item: ${fmt.price(data.local.price_per_item)} vs ${fmt.price(data.national.avg_price_per_item)} weighted average. In-stock: ${fmt.pct(data.local.in_stock)}.`
+        headline: `${data.local.skus} SKUs across ${data.local.stores} stores`,
+        body: `Local depth: ${depth} SKUs/store vs ${data.national.avg_skus_where_present} avg where present. In‑stock: ${fmt.pct(data.local.in_stock)}.`,
+        takeaway: `Key takeaway: ${Number(depth) >= data.national.avg_skus_where_present ? 'depth exceeds' : 'depth trails'} the national benchmark.`
       },
       {
-        icon: 'MARKET RANK',
-        headline: `Ranked #${data.rank.zip_rank_by_penetration} of ${data.rank.total_zips} ZIPs`,
-        body: `${data.national.zips_present} of ${data.national.total_zips} ZIPs carry this brand. Use this ZIP as a benchmark for distribution.`
+        icon: 'PRICE POSITION',
+        headline: `Price per item ${fmt.price(data.local.price_per_item)}`,
+        body: `Weighted avg price per item: ${fmt.price(data.national.avg_price_per_item)}. Avg price per SKU: ${fmt.price(data.local.avg_price)}.`,
+        takeaway: `Key takeaway: pricing is ${priceDiff >= 5 ? 'premium' : priceDiff <= -5 ? 'value‑leaning' : 'near market'} vs weighted average.`
       },
       {
-        icon: 'SUBCATEGORY MIX',
-        headline: `Where this brand shows up`,
+        icon: 'SUBCATEGORY POSITION',
+        headline: `Brand mix vs ZIP`,
         body: data.subcategories && data.subcategories.length
-          ? data.subcategories.map(s => `${s.name}: ${s.skus} SKUs`).join('<br>')
-          : 'No subcategory breakdown available.'
+          ? data.subcategories.map(s => `${s.name}: ${s.brand_share}% vs ZIP ${s.zip_share}% (${s.diff >= 0 ? '+' : ''}${s.diff}pts)`).join('<br>')
+          : 'No subcategory breakdown available.',
+        takeaway: topSub ? `Key takeaway: most over‑indexed subcategory is ${topSub.name} (${topSub.diff >= 0 ? '+' : ''}${topSub.diff}pts).` : 'Key takeaway: subcategory mix unavailable.'
       },
       {
         icon: 'TOP STORES',
-        headline: `Top stores carrying ${data.brand_label}`,
-        body: data.top_stores.length ? data.top_stores.map(s => `${s.store}: ${s.sk} SKUs, ${fmt.price(s.ap)} avg, ${fmt.pct(s.sr)} in-stock`).join('<br>') : 'No store-level detail available.'
+        headline: `Where ${data.brand_label} sells the most`,
+        body: data.top_stores.length ? data.top_stores.map(s => `${s.store}: ${s.sk} SKUs, ${fmt.price(s.ap)} avg, ${fmt.pct(s.sr)} in-stock`).join('<br>') : 'No store-level detail available.',
+        takeaway: `Key takeaway: focus on top‑performing stores for promotions and expansion case studies.`
       }
     ];
+    const concl = [
+      `Penetration: ${fmt.pct(data.local.penetration)} vs ${fmt.pct(data.national.avg_penetration)} avg`,
+      `Missing stores: ${missingStores}`,
+      `Depth: ${depth} SKUs/store vs ${data.national.avg_skus_where_present}`,
+      `Price/item: ${fmt.price(data.local.price_per_item)} vs ${fmt.price(data.national.avg_price_per_item)}`,
+      topSub ? `Top skew: ${topSub.name} (${topSub.diff >= 0 ? '+' : ''}${topSub.diff}pts)` : 'Top skew: n/a'
+    ];
+    cards.push({
+      icon: 'CONCLUSIONS',
+      headline: 'Summary snapshot',
+      body: concl.map(c => `<div class="mini-line">${c}</div>`).join(''),
+      takeaway: 'Key takeaway: use this snapshot to guide distribution, depth, and price actions.'
+    });
     document.getElementById('tailored-grid').innerHTML = cards.map(c => `
       <div class="insight-card">
         <div class="insight-icon">${c.icon}</div>
         <div class="insight-headline">${c.headline}</div>
         <div class="insight-body">${c.body}</div>
+        <div class="insight-takeaway">${c.takeaway || ''}</div>
       </div>
     `).join('');
   } else {
@@ -588,34 +616,67 @@ async function renderTailoredInsights() {
       document.getElementById('tailored-grid').innerHTML = `<div class="empty">${data.error}</div>`;
       return;
     }
+    lastStoreInsight = data;
     const s = data.store_stats;
+    const priceDiff = (data.zip_avg.price_per_item && s.pp) ? ((s.pp / data.zip_avg.price_per_item - 1) * 100) : 0;
+    const topSub = (data.subcategory_mix && data.subcategory_mix[0]) ? data.subcategory_mix[0] : null;
     const cards = [
       {
         icon: 'STORE PROFILE',
         headline: `${data.store} in ${data.zip} (${data.zip_label})`,
-        body: `${s.s} SKUs and ${s.b} brands. Avg price ${fmt.price(s.ap)}. Price per item ${fmt.price(s.pp || 0)}. In-stock ${fmt.pct(s.ir)}.`
+        body: `${s.s} SKUs and ${s.b} brands. Avg price ${fmt.price(s.ap)}. Price per item ${fmt.price(s.pp || 0)}. In-stock ${fmt.pct(s.ir)}.`,
+        takeaway: `Key takeaway: this store carries ${s.s > data.zip_avg.skus ? 'above' : 'below'} ZIP average shelf depth.`
       },
       {
-        icon: 'VS ZIP AVG',
+        icon: 'ZIP BENCHMARK',
         headline: `Compared to ZIP average`,
-        body: `SKU count vs avg: ${s.s} vs ${data.zip_avg.skus}. Brand count vs avg: ${s.b} vs ${data.zip_avg.brands}.`
+        body: `SKUs ${s.s} vs ${data.zip_avg.skus}. Brands ${s.b} vs ${data.zip_avg.brands}. Price/item ${fmt.price(s.pp || 0)} vs ZIP ${fmt.price(data.zip_avg.price_per_item)}.`,
+        takeaway: `Key takeaway: price per item is ${priceDiff >= 5 ? 'premium' : priceDiff <= -5 ? 'value‑leaning' : 'near market'} vs ZIP.`
       },
       {
-        icon: 'TOP BRANDS',
-        headline: `Top brands in this store`,
-        body: data.top_brands.length ? data.top_brands.map(b => `${b.brand}: ${b.sk} SKUs`).join('<br>') : 'No brand breakdown available.'
+        icon: 'CONCENTRATION',
+        headline: `Top brand dependence`,
+        body: `Top brand share: ${data.concentration.top1_share}% of shelf. Top‑5 share: ${data.concentration.top5_share}% of shelf.`,
+        takeaway: `Key takeaway: ${data.concentration.top5_share >= 40 ? 'concentrated shelf; risk of over‑dependence.' : 'fragmented shelf; room to rationalize.'}`
       },
       {
-        icon: 'ACTION',
-        headline: `Assortment opportunities`,
-        body: `Focus on categories where store SKU count lags ZIP average or where top brands are under-represented.`
+        icon: 'SUBCATEGORY SKEW',
+        headline: `Over/under‑indexed mix`,
+        body: data.subcategory_mix && data.subcategory_mix.length
+          ? data.subcategory_mix.map(s => `${s.name}: ${s.store_share}% vs ZIP ${s.zip_share}% (${s.diff >= 0 ? '+' : ''}${s.diff}pts)`).join('<br>')
+          : 'No subcategory breakdown available.',
+        takeaway: topSub ? `Key takeaway: biggest skew is ${topSub.name} (${topSub.diff >= 0 ? '+' : ''}${topSub.diff}pts).` : 'Key takeaway: subcategory mix unavailable.'
+      },
+      {
+        icon: 'MISSING TOP BRANDS',
+        headline: `Top ZIP brands not in this store`,
+        body: data.missing_top_brands && data.missing_top_brands.length
+          ? data.missing_top_brands.map(b => `${b.brand}: ZIP penetration ${b.zip_penetration}% (${b.zip_skus} SKUs)`).join('<br>')
+          : 'This store carries all top ZIP brands.',
+        takeaway: data.missing_top_brands && data.missing_top_brands.length
+          ? 'Key takeaway: missing high‑penetration brands suggests clear assortment gaps.'
+          : 'Key takeaway: top ZIP brands are already covered.'
       }
     ];
+    const concl = [
+      `SKUs/Brands: ${s.s}/${s.b} vs ZIP ${data.zip_avg.skus}/${data.zip_avg.brands}`,
+      `Price/item: ${fmt.price(s.pp || 0)} vs ZIP ${fmt.price(data.zip_avg.price_per_item)}`,
+      `Top‑5 share: ${data.concentration.top5_share}%`,
+      `Missing top brands: ${data.missing_top_brands ? data.missing_top_brands.length : 0}`,
+      topSub ? `Top skew: ${topSub.name} (${topSub.diff >= 0 ? '+' : ''}${topSub.diff}pts)` : 'Top skew: n/a'
+    ];
+    cards.push({
+      icon: 'CONCLUSIONS',
+      headline: 'Summary snapshot',
+      body: concl.map(c => `<div class="mini-line">${c}</div>`).join(''),
+      takeaway: 'Key takeaway: focus on depth, mix, and price levers based on the snapshot.'
+    });
     document.getElementById('tailored-grid').innerHTML = cards.map(c => `
       <div class="insight-card">
         <div class="insight-icon">${c.icon}</div>
         <div class="insight-headline">${c.headline}</div>
         <div class="insight-body">${c.body}</div>
+        <div class="insight-takeaway">${c.takeaway || ''}</div>
       </div>
     `).join('');
   }
